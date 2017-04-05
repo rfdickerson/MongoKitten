@@ -2,6 +2,7 @@ import Foundation
 import Dispatch
 import MongoKitten
 
+let numberOfDocuments = 100
 let settings = ClientSettings(host: MongoHost(hostname: "127.0.0.1",
                               port: UInt16(27017)),
                               sslSettings: nil,
@@ -19,7 +20,7 @@ if server.isConnected {
 try? database.drop()
 
 var documents = [Document]()
-for id in 0..<10000 {
+for id in 0..<numberOfDocuments {
     let doc: Document = [
         "_id": "\(id)",
         "customerId": "128374",
@@ -31,17 +32,36 @@ for id in 0..<10000 {
 
 let queue = DispatchQueue(label: "insertion", attributes: .concurrent)
 let dispatchGroup = DispatchGroup()
-let parallel = false
+let parallel = true
 
-documents.forEach() { doc in 
+documents.forEach { doc in 
 
     if parallel {
         queue.async(group: dispatchGroup) {
-            try! collection.insert( doc )
+
+            do {
+                try collection.insert( doc )
+            } catch let error as InsertErrors {
+                print("error \(error)")
+            } catch let error as MongoError {
+                print("error \(error)")
+            } catch {
+                print("Anything else")
+            }
+
+            sleep(1)
 
         }
+
     } else {
-        try! collection.insert( doc )
+
+        do {
+            try collection.insert( doc )
+        } catch let error as InsertErrors {
+            print("error")
+        } catch {
+            print("Anything else")
+        }
     }
 
 }
@@ -50,11 +70,4 @@ if parallel {
     dispatchGroup.wait()
 }
 
-// let doc: Document = [
-//         "_id": "0",
-//         "customerId": "128374",
-//         "flightId": "AA231",
-//         "dateOfBooking": Date(),
-//     ]
-
-// try collection.insert(doc)
+print("Finished adding \(documents.count) documents to the database")

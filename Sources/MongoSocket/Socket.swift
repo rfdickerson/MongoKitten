@@ -27,6 +27,7 @@ public final class MongoSocket: MongoTCP {
 
     guard let client = client else { throw MongoSocketError.clientNotInitialized }
 
+    // try client.setBlocking(mode: false)
     client.readBufferSize = bufferSize
     try client.connect(to: hostname, port: Int32(port))
 
