@@ -16,7 +16,7 @@ XCTMain([
     // testCase(AggregationTests.allTests),
     // testCase(AuthenticationTests.allTests),        
     // testCase(ClientSettingsTest.allTests),
-    // testCase(CollectionTests.allTests),    
+    testCase(CollectionTests.allTests),    
     // testCase(DatabaseTests.allTests),
     // testCase(GeoJSONTests.allTests),
     // testCase(GeospatialQueryingTest.allTests),

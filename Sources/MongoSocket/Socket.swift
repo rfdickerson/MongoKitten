@@ -16,11 +16,12 @@ import SSLService
 public final class MongoSocket: MongoTCP {
 
   private let client: Socket?
+  private let bufferSize = 32768
 
   public init(address hostname: String, port: UInt16, options: [String: Any]) throws {
 
     client = try Socket.create()
-    client?.readBufferSize = 32768
+    client?.readBufferSize = bufferSize
     try client?.connect(to: hostname, port: Int32(port))
 
   }
@@ -34,21 +35,25 @@ public final class MongoSocket: MongoTCP {
 
   public func receive(into buffer: inout [UInt8]) throws {
 
+    guard let client = client else { throw MongoSocketError.clientNotInitialized }
+
     let rawPtr = UnsafeMutableRawPointer(mutating: buffer)
     var newPtr = rawPtr.load(as: [CChar].self) 
 
-    let _ = try client?.read(into: &newPtr, 
-                             bufSize: 1024,
+    let _ = try client.read(into: &newPtr, 
+                             bufSize: bufferSize,
                              truncate: true)
   }
 
   public var isConnected: Bool {
-    return client!.isConnected
+    return client?.isConnected ?? false
   }
 
   public func close() throws {
 
-    client?.close()
+    guard let client = client else { throw MongoSocketError.clientNotInitialized }
+
+    client.close()
 
   }
 
