@@ -18,12 +18,17 @@ public final class MongoSocket: MongoTCP {
   private let client: Socket?
   private let bufferSize = 4096
   private var myBuffer: Data? 
+  private var sslEnabled = false
 
   public init(address hostname: String, port: UInt16, options: [String: Any]) throws {
 
+    self.sslEnabled = options["sslEnabled"] as? Bool ?? false
     client = try Socket.create()
-    client?.readBufferSize = bufferSize
-    try client?.connect(to: hostname, port: Int32(port))
+
+    guard let client = client else { throw MongoSocketError.clientNotInitialized }
+
+    client.readBufferSize = bufferSize
+    try client.connect(to: hostname, port: Int32(port))
 
     myBuffer = Data(capacity: bufferSize)
 
@@ -42,11 +47,11 @@ public final class MongoSocket: MongoTCP {
 
     buffer.removeAll()
 
-    let length = try client.read(into: &myBuffer!)
-    buffer.append( contentsOf: Array(myBuffer!))
+    guard var myBuffer = myBuffer else { throw MongoSocketError.clientNotInitialized }
 
-    print(length)
-    
+    let _ = try client.read(into: &myBuffer)
+    buffer.append( contentsOf: Array(myBuffer))
+
   }
 
   public var isConnected: Bool {
