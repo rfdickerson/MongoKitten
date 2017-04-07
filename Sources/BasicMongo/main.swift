@@ -2,7 +2,7 @@ import Foundation
 import Dispatch
 import MongoKitten
 
-let numberOfDocuments = 100
+let numberOfDocuments = 10000
 let settings = ClientSettings(host: MongoHost(hostname: "127.0.0.1",
                               port: UInt16(27017)),
                               sslSettings: nil,
@@ -48,8 +48,6 @@ documents.forEach { doc in
             } catch {
                 print("Anything else")
             }
-
-            sleep(1)
 
         }
 

@@ -30,7 +30,7 @@ import Dispatch
 /// It's internal because ReplyMessages are an internal struct that is used for direct communication with MongoDB only
 internal typealias ResponseHandler = ((Message) -> Void)
 
-internal var log: Logger = PrintLogger()
+internal var log: Logger = NotLogger()
 
 /// A server object is the core of MongoKitten as it's used to communicate to the server.
 /// You can select a `Database` by subscripting an instance of this Server with a `String`.
@@ -220,6 +220,18 @@ public final class Server {
     
     /// Tihs loop maintains all connections
     fileprivate func backgroundLoop() {
+        connectionPoolLock.lock()
+        var disconnectionPool = [Connection]()
+        
+        for connection in connections where !connection.isConnected {
+            disconnectionPool.append(connection)
+        }
+        
+        if disconnectionPool.count > 0 {
+            handleDisconnect(for: disconnectionPool)
+        }
+        connectionPoolLock.unlock()
+        
         maintainanceLoopLock.lock()
         for action in maintainanceLoopCalls {
             action()
@@ -228,7 +240,7 @@ public final class Server {
         maintainanceLoopCalls = []
         maintainanceLoopLock.unlock()
         
-        Thread.sleep(forTimeInterval: 5)
+        Thread.sleep(forTimeInterval: 30)
         
         self.connectionPoolMaintainanceQueue.async(execute: backgroundLoop)
     }
@@ -416,6 +428,31 @@ public final class Server {
         throw MongoError.internalInconsistency
     }
     
+    /// Prepares a maintainance task for detected disconnected connections
+    internal func handleDisconnect(for disconnectionPool: [Connection]) {
+    // Close them for security sake
+        disconnectionPool.forEach({
+            $0.close()
+        })
+        
+        // If this is a replica server, set up a reconnect
+        if self.isReplica {
+            self.maintainanceLoopLock.lock()
+            defer { self.maintainanceLoopLock.unlock() }
+            
+            self.logger.error("Disconnected from the replica set. Will attempt to reconnect")
+            
+            // If reinitializing is already happening, don't do it more than once
+            if !self.reinitializeReplica {
+                self.reinitializeReplica = true
+                self.maintainanceLoopCalls.append {
+                    self.logger.info("Attempting to reconnect to the replica set.")
+                    self.initializeReplica()
+                }
+            }
+        }
+    }
+    
     /// Reserves a connection to a database
     ///
     /// Can take a while when the connection pool is full.
@@ -445,29 +482,11 @@ public final class Server {
         // If there are disconnected connections
         if disconnectionPool.count > 0 {
             connectionPoolMaintainanceQueue.async {
-                // Close them for security sake
-                disconnectionPool.forEach({
-                    $0.close()
-                })
-                
-                // If this is a replica server, set up a reconnect
-                if self.isReplica {
-                    self.maintainanceLoopLock.lock()
-                    defer { self.maintainanceLoopLock.unlock() }
-                    
-                    self.logger.error("Disconnected from the replica set. Will attempt to reconnect")
-                    
-                    // If reinitializing is already happening, don't do it more than once
-                    if !self.reinitializeReplica {
-                        self.reinitializeReplica = true
-                        self.maintainanceLoopCalls.append {
-                            self.logger.info("Attempting to reconnect to the replica set.")
-                            self.initializeReplica()
-                        }
-                    }
-                }
+                self.handleDisconnect(for: disconnectionPool)
             }
         }
+        
+        connectionPoolLock.lock()
         
         // Find all possible matches to create a connection to
         let matches = self.connections.filter {
@@ -475,6 +494,8 @@ public final class Server {
         }.sorted(by: { (lhs, rhs) -> Bool in
             return lhs.users < rhs.users
         })
+        
+        connectionPoolLock.unlock()
         
         // If we need a specific database, find a connection optimal for that database I.E. already authenticated
         matching: if let db = db {
@@ -537,6 +558,8 @@ public final class Server {
             connection.authenticatedDBs.append(db.name)
         }
         
+        self.connectionPoolLock.lock()
+        defer { self.connectionPoolLock.unlock() }
         connection.users += 1
         
         return connection
@@ -578,10 +601,10 @@ public final class Server {
     }
     
     /// A dispatch queue for maintainance tasks
-    private let connectionPoolMaintainanceQueue = DispatchQueue(label: "org.mongokitten.server.maintainanceQueue")
+    private let connectionPoolMaintainanceQueue = DispatchQueue(label: "org.mongokitten.server.maintainanceQueue", qos: DispatchQoS.userInitiated)
     
     /// A dispatch queue for incrementing the counter synchronously
-    private let messageMutationQueue = DispatchQueue(label: "org.mongokitten.server.messageIncrementQueue")
+    private let messageMutationQueue = DispatchQueue(label: "org.mongokitten.server.messageIncrementQueue", qos: DispatchQoS.userInitiated)
     
     /// Generates a messageID for the next Message to be sent to the server
     ///
@@ -648,13 +671,17 @@ public final class Server {
         
         let promise = ManualPromise<ServerReply>(timeout: .seconds(Int(timeout)))
         
+        Connection.responseLock.lock()
         connection.waitingForResponses[requestId] = promise
+        Connection.responseLock.unlock()
         
         do {
             try connection.client.send(data: messageData)
         } catch {
             logger.debug("Could not send data because of the following error: \"\(error)\"")
             connection.close()
+            Connection.responseLock.lock()
+            defer { Connection.responseLock.unlock() }
             connection.waitingForResponses[requestId] = nil
             throw error
         }

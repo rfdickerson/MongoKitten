@@ -37,10 +37,16 @@ class Connection {
     var users: Int = 0
     
     /// The incoming temporary buffer
-    var incomingBuffer = Bytes()
+    var incomingBuffer = Buffer()
 
     /// The dispatch queue that this connection listens on
-    private static let receiveQueue = DispatchQueue(label: "org.mongokitten.server.receiveQueue", attributes: .concurrent)
+    private static let receiveQueue = DispatchQueue(label: "org.mongokitten.server.receiveQueue", qos: DispatchQoS.userInteractive, attributes: .concurrent)
+    
+    /// Handles mutations the response buffer
+    internal static let responseLock = NSLock()
+    
+    /// Prevents a crash when the client disconnects while checking for the connection status
+    internal let isConnectedLock = NSLock()
     
     /// The responses being waited for
     var waitingForResponses = [Int32: ManualPromise<ServerReply>]()
@@ -50,6 +56,9 @@ class Connection {
     
     /// Whether this client is still connected
     public var isConnected: Bool {
+        isConnectedLock.lock()
+        
+        defer { isConnectedLock.unlock() }
         return client.isConnected
     }
     
@@ -127,8 +136,9 @@ class Connection {
     ///
     /// - throws: Unable to receive or parse the reply
     private func receive(bufferSize: Int = 1024) throws {
-        try client.receive(into: &incomingBuffer)
-        buffer.data += incomingBuffer
+        try client.receive(into: incomingBuffer)
+        let b = UnsafeBufferPointer<Byte>(start: incomingBuffer.pointer, count: incomingBuffer.usedCapacity)
+        buffer.data += [UInt8](b)
         
         while buffer.data.count >= 36 {
             let length = Int(buffer.data[0...3].makeInt32())
@@ -142,7 +152,14 @@ class Connection {
             let responseId = buffer.data[8...11].makeInt32()
             let reply = try Message.makeReply(from: responseData)
             
-            defer { waitingForResponses[responseId] = nil }
+            defer {
+                Connection.responseLock.lock()
+                waitingForResponses[responseId] = nil
+                Connection.responseLock.unlock()
+            }
+            
+            Connection.responseLock.lock()
+            defer { Connection.responseLock.unlock() }
             
             if let promise = waitingForResponses[responseId] {
                 _ = try promise.complete(reply)
