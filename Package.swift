@@ -21,7 +21,7 @@ var package = Package(
 
         // Provides Sockets + SSL
         // .Package(url: "https://github.com/vapor/tls.git", Version(2,0,0, prereleaseIdentifiers: ["beta"])),
-        .Package(url: "https://github.com/IBM-Swift/BlueSSLService.git", Version(0,12,31)),
+        .Package(url: "https://github.com/IBM-Swift/BlueSSLService.git", majorVersion: 0, minor: 12),
 
         // Asynchronous behaviour
         .Package(url: "https://github.com/OpenKitten/Schrodinger.git", majorVersion: 0, minor: 1),
