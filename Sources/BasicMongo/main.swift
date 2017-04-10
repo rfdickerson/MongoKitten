@@ -3,10 +3,31 @@ import Dispatch
 import MongoKitten
 
 let numberOfDocuments = 10000
-let settings = ClientSettings(host: MongoHost(hostname: "127.0.0.1",
-                              port: UInt16(27017)),
-                              sslSettings: nil,
-                              credentials: nil)
+
+//let host = "localhost"
+//let port = 27017
+
+
+let host = "bluemix-sandbox-dal-9-portal.7.dblayer.com"
+let port = 25438
+
+let credentials = MongoCredentials(username: "admin",
+                                   password: "GMFSMMSPDGWSTEOH",
+                                   database: "admin",
+                                   authenticationMechanism: .MONGODB_CR
+    )
+
+let sslSettings = SSLSettings(enabled: true, invalidHostNameAllowed: true, invalidCertificateAllowed: true)
+
+let settings = ClientSettings(host: MongoHost(hostname: host,
+                              port: UInt16(port)),
+                              sslSettings: sslSettings,
+                              credentials: credentials)
+
+//let settings = ClientSettings(host: MongoHost(hostname: host,
+//                                              port: UInt16(port)),
+//                              sslSettings: nil,
+//                              credentials: nil)
 
 let server = try Server(settings)
 let database = server["tutorial"]

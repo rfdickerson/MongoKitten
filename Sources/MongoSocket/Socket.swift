@@ -13,6 +13,11 @@ import Foundation
 import Socket
 import SSLService
 
+func validationFunction (_ service: SSLService) -> (Bool, String?) {
+    print("Validating... ")
+    return (true, "test")
+}
+
 public final class MongoSocket: MongoTCP {
 
   private let client: Socket?
@@ -22,10 +27,23 @@ public final class MongoSocket: MongoTCP {
 
   public init(address hostname: String, port: UInt16, options: [String: Any]) throws {
 
-    self.sslEnabled = options["sslEnabled"] as? Bool ?? false
+    sslEnabled = options["sslEnabled"] as? Bool ?? false
     client = try Socket.create()
 
     guard let client = client else { throw MongoSocketError.clientNotInitialized }
+    
+    if sslEnabled {
+        
+        let sslConfig = SSLService.Configuration(withCipherSuite: nil)
+        
+        let sslService = try SSLService(usingConfiguration: sslConfig)
+        
+        if let sslService = sslService {
+            sslService.skipVerification = true
+            client.delegate = sslService
+        }
+        
+    }
 
     // try client.setBlocking(mode: false)
     client.readBufferSize = bufferSize
@@ -57,7 +75,7 @@ public final class MongoSocket: MongoTCP {
 
         var receivedBytes: Int
 
-        receivedBytes = try! client.read(into: $0, bufSize: Int(UInt16.max))
+        receivedBytes = try client.read(into: $0, bufSize: Int(UInt16.max))
 
         guard receivedBytes != -1 else {
         _ = try self.close()
